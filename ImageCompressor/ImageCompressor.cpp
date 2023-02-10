@@ -6,6 +6,9 @@
 #include "ICompressor.h"
 #include "SimpleCompressor.h"
 #include "ParallelCompressor.h"
+#include "Stopwatch.h"
+#include <string>
+#include "OpenMpCompressor.h"
 
 #define MAX_LOADSTRING 100
 
@@ -15,10 +18,16 @@ HWND hMainWindow;
 HINSTANCE hInst;                                // текущий экземпляр
 WCHAR szTitle[MAX_LOADSTRING];                  // Текст строки заголовка
 WCHAR szWindowClass[MAX_LOADSTRING];            // имя класса главного окна
-WCHAR szBmpFilePath[] = L"C:\\Users\\Rukin\\source\\repos\\Cpp\\ImageCompressor\\ImageCompressor\\sample_2.bmp";
+WCHAR szBmpFilePath[] = L"C:\\Users\\Rukin\\source\\repos\\Cpp\\ImageCompressor\\ImageCompressor\\sample_1.bmp";
+Stopwatch _stopwatch;
+double _compressWorkingTime = 0;
+double _decompressWorkingTime = 0;
+
 
 // кнопки
 HWND hCompressButton = NULL;
+HWND hUseParallelCompressorButton = NULL;
+HWND hUseOpenMpCompressorButton = NULL;
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -27,7 +36,7 @@ LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 void DrawBitmap(HDC hDC, int x, int y, HBITMAP hBitmap);
 HWND CreateButton(const wchar_t* buttonText, int x, int y, int width, int height, HWND parentWindow);
-HBITMAP CompressImage(HBITMAP hBitmap, ICompressor* compressor);
+HBITMAP CompressAndDecompressImage(HBITMAP hBitmap, ICompressor* compressor);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -144,11 +153,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // ловим нажатие на кнопку
             if (HIWORD(wParam) == BN_CLICKED)
             {
-                if ((HWND)lParam == hCompressButton) // если нажата кнопка для сжатия изображения
+                int threadsCount = 50;
+                if ((HWND)lParam == hCompressButton) // если нажата кнопка для сжатия изображения с использованием простого компрессора
                 {
                     // сжимаем изображение
-                    // hCompressedBmp = CompressImage(hBmp, new SimpleCompressor());
-                    hCompressedBmp = CompressImage(hBmp, new ParallelCompressor(10));
+                    hCompressedBmp = CompressAndDecompressImage(hBmp, new SimpleCompressor());
+
+                    // объявляем все окно недействительным, чтобы оно было перерисовано
+                    InvalidateRect(hMainWindow, NULL, TRUE);
+                }
+                else if ((HWND)lParam == hUseParallelCompressorButton) // если нажата кнопка для сжатия изображения с использованием параллельного компрессора
+                {
+                    // сжимаем изображение
+                    hCompressedBmp = CompressAndDecompressImage(hBmp, new ParallelCompressor(threadsCount));
+
+                    // объявляем все окно недействительным, чтобы оно было перерисовано
+                    InvalidateRect(hMainWindow, NULL, TRUE);
+                }
+                else if ((HWND)lParam == hUseOpenMpCompressorButton) // если нажата кнопка для сжатия изображения с использованием параллельного компрессора OpenMp
+                {
+                    // сжимаем изображение
+                    hCompressedBmp = CompressAndDecompressImage(hBmp, new OpenMpCompressor(threadsCount));
 
                     // объявляем все окно недействительным, чтобы оно было перерисовано
                     InvalidateRect(hMainWindow, NULL, TRUE);
@@ -172,14 +197,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             int error;
             // создаем кнопку
-            hCompressButton = CreateButton(L"Compress", 50, 50, 120, 40, hWnd);
+            hCompressButton = CreateButton(L"Use Simple Compressor", 50, 50, 200, 40, hWnd);
+            hUseParallelCompressorButton = CreateButton(L"Use Parallel Compressor", 300, 50, 200, 40, hWnd);
+            hUseOpenMpCompressorButton = CreateButton(L"Use OpenMp Compressor", 550, 50, 200, 40, hWnd);
             ShowWindow(hCompressButton, SW_SHOWNORMAL);
+            ShowWindow(hUseParallelCompressorButton, SW_SHOWNORMAL);
+            ShowWindow(hUseOpenMpCompressorButton, SW_SHOWNORMAL);
             // загружаем картинку
             hBmp = (HBITMAP)LoadImageW(NULL, szBmpFilePath, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
             break;
         }
     case WM_PAINT:
         {
+            std::string messageCompress = "Current compress time: " + std::to_string(_compressWorkingTime * 1000) + " ms";
+            std::string messageDecompress = "Current decompress time: " + std::to_string(_decompressWorkingTime * 1000) + " ms";
             PAINTSTRUCT ps;
             BITMAP bm;
             HDC hdc = BeginPaint(hWnd, &ps);
@@ -189,6 +220,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 GetObject(hCompressedBmp, sizeof(BITMAP), &bm);
                 DrawBitmap(hdc, imageX + bm.bmWidth + imageX, imageY, hCompressedBmp);
+                TextOutA(hdc, imageX, imageY + bm.bmHeight + 50, messageCompress.c_str(), messageCompress.size());
+                TextOutA(hdc, imageX, imageY + bm.bmHeight + 100, messageDecompress.c_str(), messageDecompress.size());
             }
             EndPaint(hWnd, &ps);
         }
@@ -282,7 +315,7 @@ void DrawBitmap(HDC hDC, int x, int y, HBITMAP hBitmap)
 }
 
 
-HBITMAP CompressImage(HBITMAP hBitmap, ICompressor* compressor)
+HBITMAP CompressAndDecompressImage(HBITMAP hBitmap, ICompressor* compressor)
 {
     // получаем пиксельные данные изображения
     HDC hdc = CreateCompatibleDC(NULL);
@@ -307,10 +340,18 @@ HBITMAP CompressImage(HBITMAP hBitmap, ICompressor* compressor)
     GetDIBits(hdc, hBitmap, 0, bm.bmHeight, pixels, &bmpInfo, DIB_RGB_COLORS);
 
     // выполняем сжатие
+    _stopwatch.Start();
     unsigned short* compressedPixels = compressor->Compress((unsigned int*)pixels, bm.bmWidth, bm.bmHeight);
+    _stopwatch.Stop();
+    _compressWorkingTime = _stopwatch.Get();
+    _stopwatch.Reset();
 
     // выполняем расшифровку, чтобы затем отобразить
+    _stopwatch.Start();
     unsigned int* restoredPixels = compressor->Decompress(compressedPixels, bm.bmWidth, bm.bmHeight);
+    _stopwatch.Stop();
+    _decompressWorkingTime = _stopwatch.Get();
+    _stopwatch.Reset();
 
     // запихиваем байты в битмап
     restoredBitMap = CreateCompatibleBitmap(hdc, bm.bmWidth, bm.bmHeight);

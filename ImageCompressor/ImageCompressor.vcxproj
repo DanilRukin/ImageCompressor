@@ -104,6 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -131,9 +132,11 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="ICompressor.h" />
     <ClInclude Include="ImageCompressor.h" />
+    <ClInclude Include="OpenMpCompressor.h" />
     <ClInclude Include="ParallelCompressor.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="SimpleCompressor.h" />
+    <ClInclude Include="Stopwatch.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
